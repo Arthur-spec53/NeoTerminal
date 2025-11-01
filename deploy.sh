@@ -118,12 +118,127 @@ detect_os() {
     log "Operating System: $OS $OS_VERSION"
 }
 
+# 检查并安装 Node.js
+ensure_nodejs() {
+    print_step "检查 Node.js 环境..."
+    
+    if command_exists node && command_exists npm; then
+        local node_version=$(node -v)
+        local npm_version=$(npm -v)
+        print_success "检测到 Node.js $node_version, npm $npm_version"
+        log "Node.js: $node_version, npm: $npm_version"
+        return 0
+    fi
+    
+    print_warning "未检测到 Node.js 或 npm"
+    
+    if ! confirm "是否自动安装 Node.js (推荐 LTS 版本)？" "y"; then
+        print_error "Node.js 是必需的，部署已取消"
+        exit 1
+    fi
+    
+    print_step "安装 Node.js..."
+    
+    case "$OS" in
+        ubuntu|debian)
+            # 安装 NodeSource repository
+            curl -fsSL https://deb.nodesource.com/setup_lts.x | sudo -E bash -
+            sudo apt-get install -y nodejs
+            ;;
+        centos|rhel)
+            curl -fsSL https://rpm.nodesource.com/setup_lts.x | sudo bash -
+            sudo yum install -y nodejs
+            ;;
+        fedora)
+            sudo dnf install -y nodejs npm
+            ;;
+        *)
+            print_error "不支持的操作系统，请手动安装 Node.js"
+            print_info "访问: https://nodejs.org/ 下载安装"
+            exit 1
+            ;;
+    esac
+    
+    if command_exists node && command_exists npm; then
+        print_success "Node.js 安装成功: $(node -v)"
+        log "Node.js installed: $(node -v)"
+    else
+        print_error "Node.js 安装失败"
+        exit 1
+    fi
+}
+
+# 自动构建项目
+auto_build() {
+    print_step "准备构建项目..."
+    
+    # 检查 package.json 是否存在
+    if [ ! -f "$SCRIPT_DIR/package.json" ]; then
+        print_error "未找到 package.json，请确认这是 XBoard 前端项目目录"
+        exit 1
+    fi
+    
+    # 检查 node_modules 是否存在
+    if [ ! -d "$SCRIPT_DIR/node_modules" ]; then
+        print_step "安装项目依赖..."
+        print_info "这可能需要几分钟，请耐心等待..."
+        
+        cd "$SCRIPT_DIR"
+        npm install --production=false
+        
+        if [ $? -eq 0 ]; then
+            print_success "依赖安装完成"
+            log "npm install completed"
+        else
+            print_error "依赖安装失败"
+            exit 1
+        fi
+    else
+        print_success "检测到 node_modules 已存在"
+    fi
+    
+    # 构建项目
+    print_step "构建生产版本..."
+    print_info "正在编译和优化代码，请稍候..."
+    
+    cd "$SCRIPT_DIR"
+    npm run build
+    
+    if [ $? -eq 0 ]; then
+        print_success "项目构建完成"
+        log "npm run build completed"
+        
+        # 显示构建结果
+        if [ -d "$DIST_DIR" ]; then
+            local file_count=$(find "$DIST_DIR" -type f | wc -l)
+            local dist_size=$(du -sh "$DIST_DIR" | cut -f1)
+            print_info "构建文件: $file_count 个，总大小: $dist_size"
+        fi
+    else
+        print_error "项目构建失败"
+        print_info "请检查 $LOG_FILE 获取详细错误信息"
+        exit 1
+    fi
+}
+
 # 检查必要的目录和文件
 check_prerequisites() {
     print_step "检查部署前置条件..."
     
+    # 如果 dist 目录不存在，自动构建
     if [ ! -d "$DIST_DIR" ]; then
-        print_error "未找到 dist 目录！请先运行 'npm run build' 进行构建"
+        print_warning "未找到 dist 目录，将自动构建项目"
+        
+        # 确保 Node.js 已安装
+        ensure_nodejs
+        
+        # 自动构建
+        auto_build
+    fi
+    
+    # 再次检查 dist 目录
+    if [ ! -d "$DIST_DIR" ]; then
+        print_error "构建后仍未找到 dist 目录"
         exit 1
     fi
     
