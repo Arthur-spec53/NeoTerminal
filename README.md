@@ -78,16 +78,32 @@ XBoard 前端是一个基于 Vue 3 的现代化 VPN 订阅管理系统前端，�
 
 ## 🚀 快速开始
 
-### 前置要求
+### 生产部署（推荐）
 
-- Node.js 18.0+
-- npm 或 yarn
+**真正的一键部署，无需任何前置条件！** 🎉
+
+```bash
+# 克隆仓库
+git clone https://github.com/Arthur-spec53/xboard-frontend.git
+cd xboard-frontend
+
+# 运行部署脚本（会自动安装所有依赖）
+chmod +x deploy.sh
+./deploy.sh
+```
+
+脚本会自动：
+- ✅ 检测并安装 Node.js（如果没有）
+- ✅ 安装项目依赖
+- ✅ 构建生产版本
+- ✅ 安装和配置 Nginx
+- ✅ 可选：申请 SSL 证书
 
 ### 开发环境
 
 ```bash
 # 克隆仓库
-git clone https://github.com/your-username/xboard-frontend.git
+git clone https://github.com/Arthur-spec53/xboard-frontend.git
 cd xboard-frontend
 
 # 安装依赖
@@ -115,32 +131,39 @@ npm run preview
 
 ### 方式 1: 一键部署脚本（推荐）⭐
 
+**🎉 无需任何前置条件！脚本会自动安装所有依赖！**
+
 **Linux 用户：**
 ```bash
-# 给脚本添加执行权限
-chmod +x deploy.sh
+# 克隆项目
+git clone https://github.com/Arthur-spec53/xboard-frontend.git
+cd xboard-frontend
 
-# 运行部署脚本
-./deploy.sh
-
-# 按照提示操作即可！
+# 运行部署脚本（仅此一步！）
+chmod +x deploy.sh && ./deploy.sh
 ```
 
 **Windows 用户：**
 ```powershell
+# 克隆项目
+git clone https://github.com/Arthur-spec53/xboard-frontend.git
+cd xboard-frontend
+
 # 以管理员身份运行 PowerShell
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
-
-# 运行部署脚本
 .\deploy.ps1
 ```
 
 部署脚本会自动：
-- ✅ 安装 Nginx/IIS
-- ✅ 配置 Web 服务器
-- ✅ 申请 SSL 证书（可选）
-- ✅ 配置 HTTPS
-- ✅ 设置自动续期
+- ✅ 检测并安装 Node.js（LTS 版本）
+- ✅ 安装项目依赖 (npm install)
+- ✅ 构建生产版本 (npm run build)
+- ✅ 安装并配置 Nginx/IIS
+- ✅ 申请 SSL 证书（可选，Let's Encrypt）
+- ✅ 配置 HTTPS 和安全头
+- ✅ 设置证书自动续期
+
+**真正的保姆级部署，零门槛！** 🚀
 
 ### 方式 2: Docker 部署
 
