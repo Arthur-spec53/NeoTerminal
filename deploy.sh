@@ -437,37 +437,44 @@ verify_domain() {
     fi
 }
 
-# 申请 SSL 证书
+# 申请 SSL 证书（支持多域名）
 request_ssl_certificate() {
-    local domain="$1"
+    local domains="$1"
     local web_root="$2"
     local email="$3"
     
     print_step "申请 SSL 证书..."
     
-    # 验证域名解析
-    if ! verify_domain "$domain"; then
-        print_warning "域名验证失败，但您可以选择继续（不推荐）"
+    # 将域名字符串转换为数组
+    IFS=' ' read -ra domain_array <<< "$domains"
+    local primary_domain="${domain_array[0]}"
+    
+    # 验证主域名解析
+    print_info "验证主域名: $primary_domain"
+    if ! verify_domain "$primary_domain"; then
+        print_warning "主域名验证失败，但您可以选择继续（不推荐）"
         if ! confirm "是否继续申请证书？（需要域名正确解析）" "n"; then
             return 1
         fi
     fi
     
+    # 构建 certbot 命令参数
+    local certbot_args="certonly --webroot --webroot-path=$web_root --email $email --agree-tos --no-eff-email --force-renewal"
+    
+    # 添加所有域名
+    for domain in "${domain_array[@]}"; do
+        certbot_args="$certbot_args -d $domain"
+        print_info "包含域名: $domain"
+    done
+    
     # 使用 webroot 方式申请证书
     print_info "使用 Let's Encrypt 申请证书..."
     print_info "这可能需要几秒钟..."
     
-    if sudo certbot certonly \
-        --webroot \
-        --webroot-path="$web_root" \
-        --email "$email" \
-        --agree-tos \
-        --no-eff-email \
-        --force-renewal \
-        -d "$domain"; then
-        
+    if sudo certbot $certbot_args; then
         print_success "SSL 证书申请成功！"
-        print_info "证书位置: /etc/letsencrypt/live/$domain/"
+        print_info "证书位置: /etc/letsencrypt/live/$primary_domain/"
+        print_success "证书涵盖以下域名: $domains"
         return 0
     else
         print_error "SSL 证书申请失败"
@@ -475,6 +482,7 @@ request_ssl_certificate() {
         echo "  1. 域名未正确解析到服务器"
         echo "  2. 80端口未开放或被占用"
         echo "  3. 防火墙阻止了Let's Encrypt的验证请求"
+        echo "  4. 多个域名中有部分未正确解析"
         return 1
     fi
 }
@@ -492,23 +500,29 @@ setup_ssl_renewal() {
     fi
 }
 
-# 生成带 HTTPS 的 Nginx 配置
+# 生成带 HTTPS 的 Nginx 配置（支持多域名）
 generate_nginx_config_https() {
-    local domain="$1"
+    local domains="$1"
     local web_root="$2"
     local api_backend="$3"
     local config_file="$4"
-    local cert_path="/etc/letsencrypt/live/$domain/fullchain.pem"
-    local key_path="/etc/letsencrypt/live/$domain/privkey.pem"
+    
+    # 获取第一个域名作为主域名（用于证书路径）
+    IFS=' ' read -ra domain_array <<< "$domains"
+    local primary_domain="${domain_array[0]}"
+    
+    local cert_path="/etc/letsencrypt/live/$primary_domain/fullchain.pem"
+    local key_path="/etc/letsencrypt/live/$primary_domain/privkey.pem"
     
     cat > "$config_file" << EOF
 # XBoard 前端 Nginx 配置 (HTTPS)
 # 生成时间: $(date)
+# 域名: $domains
 
 # HTTP 服务器 - 重定向到 HTTPS
 server {
     listen 80;
-    server_name $domain;
+    server_name $domains;
     
     # Let's Encrypt 验证
     location ^~ /.well-known/acme-challenge/ {
@@ -524,7 +538,7 @@ server {
 # HTTPS 服务器
 server {
     listen 443 ssl http2;
-    server_name $domain;
+    server_name $domains;
     
     # SSL 证书配置
     ssl_certificate $cert_path;
@@ -602,9 +616,9 @@ EOF
     print_success "HTTPS Nginx 配置文件已生成: $config_file"
 }
 
-# 生成 Nginx 配置文件
+# 生成 Nginx 配置文件（支持多域名）
 generate_nginx_config() {
-    local domain="$1"
+    local domains="$1"
     local web_root="$2"
     local api_backend="$3"
     local config_file="$4"
@@ -612,10 +626,11 @@ generate_nginx_config() {
     cat > "$config_file" << EOF
 # XBoard 前端 Nginx 配置
 # 生成时间: $(date)
+# 域名: $domains
 
 server {
     listen 80;
-    server_name $domain;
+    server_name $domains;
     
     # 网站根目录
     root $web_root;
@@ -678,7 +693,7 @@ server {
 # HTTPS 配置 (需要配置SSL证书)
 # server {
 #     listen 443 ssl http2;
-#     server_name $domain;
+#     server_name $domains;
 #     
 #     ssl_certificate /path/to/your/certificate.crt;
 #     ssl_certificate_key /path/to/your/private.key;
@@ -700,8 +715,14 @@ deploy_nginx() {
     print_step "开始 Nginx 部署..."
     
     # 获取配置信息
-    read -p "请输入域名 (例: www.example.com 或 localhost): " domain
-    domain=${domain:-localhost}
+    echo ""
+    print_info "域名配置说明："
+    echo "  - 单个域名: example.com"
+    echo "  - 多个域名: example.com www.example.com app.example.com (用空格分隔)"
+    echo "  - 本地测试: localhost"
+    echo ""
+    read -p "请输入域名: " domains
+    domains=${domains:-localhost}
     
     read -p "请输入网站根目录 (默认: /var/www/xboard): " web_root
     web_root=${web_root:-/var/www/xboard}
@@ -713,9 +734,10 @@ deploy_nginx() {
     enable_ssl=false
     ssl_email=""
     
-    if [ "$domain" != "localhost" ] && [ "$domain" != "127.0.0.1" ]; then
+    # 检查是否为本地域名
+    if [[ "$domains" != "localhost" ]] && [[ "$domains" != "127.0.0.1" ]] && [[ "$domains" != *"localhost"* ]]; then
         echo ""
-        print_info "检测到您使用了真实域名: $domain"
+        print_info "检测到您使用了真实域名: $domains"
         if confirm "是否配置 HTTPS (SSL证书)？" "y"; then
             enable_ssl=true
             read -p "请输入您的邮箱地址 (用于SSL证书通知): " ssl_email
@@ -733,7 +755,7 @@ deploy_nginx() {
     # 确认信息
     echo ""
     print_info "═══ 部署配置确认 ═══"
-    echo "域名: $domain"
+    echo "域名: $domains"
     echo "网站目录: $web_root"
     echo "后端API: $api_backend"
     if [ "$enable_ssl" = true ]; then
@@ -771,7 +793,7 @@ deploy_nginx() {
     # 生成 Nginx 配置 (先生成 HTTP 版本)
     print_step "生成 Nginx 配置..."
     config_file="$SCRIPT_DIR/nginx-xboard.conf"
-    generate_nginx_config "$domain" "$web_root" "$api_backend" "$config_file"
+    generate_nginx_config "$domains" "$web_root" "$api_backend" "$config_file"
     
     # 应用配置并启动服务
     print_step "应用 Nginx 配置..."
@@ -814,10 +836,10 @@ deploy_nginx() {
         # 确保 certbot 已安装
         if ensure_certbot; then
             # 申请证书
-            if request_ssl_certificate "$domain" "$web_root" "$ssl_email"; then
+            if request_ssl_certificate "$domains" "$web_root" "$ssl_email"; then
                 # 重新生成 HTTPS 配置
                 print_step "生成 HTTPS 配置..."
-                generate_nginx_config_https "$domain" "$web_root" "$api_backend" "$config_file"
+                generate_nginx_config_https "$domains" "$web_root" "$api_backend" "$config_file"
                 
                 # 重新应用配置
                 if [ -d "/etc/nginx/sites-available" ]; then
@@ -834,9 +856,14 @@ deploy_nginx() {
                     # 配置自动续期
                     setup_ssl_renewal
                     
+                    # 获取主域名用于显示
+                    IFS=' ' read -ra domain_array <<< "$domains"
+                    local primary_domain="${domain_array[0]}"
+                    
                     echo ""
                     print_success "═══ HTTPS 配置完成！ =══"
-                    print_info "HTTPS 访问地址: https://$domain"
+                    print_info "HTTPS 访问地址: https://$primary_domain"
+                    print_info "所有域名: $domains"
                     print_info "HTTP 会自动重定向到 HTTPS"
                 else
                     print_error "HTTPS 配置测试失败"
@@ -848,12 +875,18 @@ deploy_nginx() {
         fi
     fi
     
+    # 获取主域名用于显示
+    IFS=' ' read -ra domain_array <<< "$domains"
+    local primary_domain="${domain_array[0]}"
+    
     echo ""
     print_success "═══ Nginx 部署完成！ =══"
-    if [ "$enable_ssl" = true ] && [ -f "/etc/letsencrypt/live/$domain/fullchain.pem" ]; then
-        print_info "访问地址: https://$domain"
+    if [ "$enable_ssl" = true ] && [ -f "/etc/letsencrypt/live/$primary_domain/fullchain.pem" ]; then
+        print_info "访问地址: https://$primary_domain"
+        print_info "所有域名: $domains"
     else
-        print_info "访问地址: http://$domain"
+        print_info "访问地址: http://$primary_domain"
+        print_info "所有域名: $domains"
     fi
     print_info "网站目录: $web_root"
     print_info "配置文件: $config_file"
