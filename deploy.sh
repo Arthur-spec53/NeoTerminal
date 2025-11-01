@@ -1,0 +1,1035 @@
+#!/bin/bash
+
+#═══════════════════════════════════════════════════════════════════════
+# XBoard 前端一键部署脚本
+# 版本: 1.0.0
+# 作者: XBoard Team
+# 描述: 保姆级部署脚本，小白也能轻松部署
+#═══════════════════════════════════════════════════════════════════════
+
+set -e  # 遇到错误立即退出
+
+# 颜色定义
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+NC='\033[0m' # No Color
+
+# 配置变量
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DIST_DIR="${SCRIPT_DIR}/dist"
+BACKUP_DIR="${SCRIPT_DIR}/backups"
+LOG_FILE="${SCRIPT_DIR}/deploy.log"
+
+#═══════════════════════════════════════════════════════════════════════
+# 辅助函数
+#═══════════════════════════════════════════════════════════════════════
+
+# 打印带颜色的消息
+print_success() {
+    echo -e "${GREEN}✓ $1${NC}"
+}
+
+print_error() {
+    echo -e "${RED}✗ $1${NC}"
+}
+
+print_warning() {
+    echo -e "${YELLOW}⚠ $1${NC}"
+}
+
+print_info() {
+    echo -e "${CYAN}ℹ $1${NC}"
+}
+
+print_step() {
+    echo -e "${BLUE}▶ $1${NC}"
+}
+
+# 打印标题
+print_banner() {
+    echo -e "${CYAN}"
+    echo "═══════════════════════════════════════════════════════════════"
+    echo "  🚀 XBoard 前端一键部署脚本 v1.0.0"
+    echo "═══════════════════════════════════════════════════════════════"
+    echo -e "${NC}"
+}
+
+# 日志记录
+log() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" >> "$LOG_FILE"
+}
+
+# 检查命令是否存在
+command_exists() {
+    command -v "$1" >/dev/null 2>&1
+}
+
+# 确认提示
+confirm() {
+    local prompt="$1"
+    local default="${2:-n}"
+    
+    if [ "$default" = "y" ]; then
+        prompt="$prompt [Y/n]: "
+    else
+        prompt="$prompt [y/N]: "
+    fi
+    
+    read -p "$prompt" response
+    response=${response:-$default}
+    
+    case "$response" in
+        [yY][eE][sS]|[yY]) 
+            return 0
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
+# 检查是否为root用户
+check_root() {
+    if [ "$EUID" -eq 0 ]; then
+        print_warning "检测到您正在使用 root 用户运行脚本"
+        if ! confirm "是否继续？" "y"; then
+            print_info "部署已取消"
+            exit 0
+        fi
+    fi
+}
+
+# 检测操作系统
+detect_os() {
+    if [ -f /etc/os-release ]; then
+        . /etc/os-release
+        OS=$ID
+        OS_VERSION=$VERSION_ID
+    elif [ -f /etc/redhat-release ]; then
+        OS="centos"
+    else
+        OS=$(uname -s)
+    fi
+    
+    print_info "检测到操作系统: $OS $OS_VERSION"
+    log "Operating System: $OS $OS_VERSION"
+}
+
+# 检查必要的目录和文件
+check_prerequisites() {
+    print_step "检查部署前置条件..."
+    
+    if [ ! -d "$DIST_DIR" ]; then
+        print_error "未找到 dist 目录！请先运行 'npm run build' 进行构建"
+        exit 1
+    fi
+    
+    if [ ! -f "$DIST_DIR/index.html" ]; then
+        print_error "dist 目录中未找到 index.html！构建可能未完成"
+        exit 1
+    fi
+    
+    print_success "前置条件检查通过"
+}
+
+#═══════════════════════════════════════════════════════════════════════
+# Nginx 部署相关函数
+#═══════════════════════════════════════════════════════════════════════
+
+# 安装 Nginx
+install_nginx() {
+    print_step "安装 Nginx..."
+    
+    case "$OS" in
+        ubuntu|debian)
+            sudo apt-get update
+            sudo apt-get install -y nginx
+            ;;
+        centos|rhel|fedora)
+            sudo yum install -y nginx || sudo dnf install -y nginx
+            ;;
+        *)
+            print_error "不支持的操作系统，请手动安装 Nginx"
+            return 1
+            ;;
+    esac
+    
+    print_success "Nginx 安装完成"
+}
+
+# 检查并安装 Nginx
+ensure_nginx() {
+    if command_exists nginx; then
+        print_success "检测到 Nginx 已安装"
+        nginx -v
+    else
+        print_warning "未检测到 Nginx"
+        if confirm "是否自动安装 Nginx？" "y"; then
+            install_nginx
+        else
+            print_error "Nginx 是必需的，部署已取消"
+            exit 1
+        fi
+    fi
+}
+
+#═══════════════════════════════════════════════════════════════════════
+# SSL 证书相关函数
+#═══════════════════════════════════════════════════════════════════════
+
+# 安装 certbot
+install_certbot() {
+    print_step "安装 Certbot..."
+    
+    case "$OS" in
+        ubuntu|debian)
+            sudo apt-get update
+            sudo apt-get install -y certbot python3-certbot-nginx
+            ;;
+        centos|rhel)
+            sudo yum install -y epel-release
+            sudo yum install -y certbot python3-certbot-nginx
+            ;;
+        fedora)
+            sudo dnf install -y certbot python3-certbot-nginx
+            ;;
+        *)
+            print_error "不支持的操作系统，请手动安装 Certbot"
+            return 1
+            ;;
+    esac
+    
+    print_success "Certbot 安装完成"
+}
+
+# 确保 certbot 已安装
+ensure_certbot() {
+    if command_exists certbot; then
+        print_success "检测到 Certbot 已安装"
+        certbot --version
+        return 0
+    else
+        print_warning "未检测到 Certbot"
+        if confirm "是否自动安装 Certbot？" "y"; then
+            install_certbot
+            return $?
+        else
+            print_warning "跳过 SSL 证书配置"
+            return 1
+        fi
+    fi
+}
+
+# 验证域名解析
+verify_domain() {
+    local domain="$1"
+    
+    print_step "验证域名解析..."
+    
+    # 获取服务器公网IP
+    server_ip=$(curl -s ifconfig.me || curl -s icanhazip.com || curl -s ipinfo.io/ip)
+    
+    if [ -z "$server_ip" ]; then
+        print_warning "无法获取服务器公网IP"
+        return 1
+    fi
+    
+    print_info "服务器IP: $server_ip"
+    
+    # 查询域名解析
+    domain_ip=$(dig +short "$domain" @8.8.8.8 | tail -n1)
+    
+    if [ -z "$domain_ip" ]; then
+        print_error "域名未解析或解析失败"
+        print_info "请确保域名 $domain 已经正确解析到 $server_ip"
+        return 1
+    fi
+    
+    print_info "域名解析IP: $domain_ip"
+    
+    # 比较IP
+    if [ "$server_ip" = "$domain_ip" ]; then
+        print_success "域名解析验证成功！"
+        return 0
+    else
+        print_error "域名解析的IP ($domain_ip) 与服务器IP ($server_ip) 不匹配"
+        print_info "请确保域名已正确解析，并等待DNS传播完成（可能需要几分钟到几小时）"
+        return 1
+    fi
+}
+
+# 申请 SSL 证书
+request_ssl_certificate() {
+    local domain="$1"
+    local web_root="$2"
+    local email="$3"
+    
+    print_step "申请 SSL 证书..."
+    
+    # 验证域名解析
+    if ! verify_domain "$domain"; then
+        print_warning "域名验证失败，但您可以选择继续（不推荐）"
+        if ! confirm "是否继续申请证书？（需要域名正确解析）" "n"; then
+            return 1
+        fi
+    fi
+    
+    # 使用 webroot 方式申请证书
+    print_info "使用 Let's Encrypt 申请证书..."
+    print_info "这可能需要几秒钟..."
+    
+    if sudo certbot certonly \
+        --webroot \
+        --webroot-path="$web_root" \
+        --email "$email" \
+        --agree-tos \
+        --no-eff-email \
+        --force-renewal \
+        -d "$domain"; then
+        
+        print_success "SSL 证书申请成功！"
+        print_info "证书位置: /etc/letsencrypt/live/$domain/"
+        return 0
+    else
+        print_error "SSL 证书申请失败"
+        print_info "常见原因："
+        echo "  1. 域名未正确解析到服务器"
+        echo "  2. 80端口未开放或被占用"
+        echo "  3. 防火墙阻止了Let's Encrypt的验证请求"
+        return 1
+    fi
+}
+
+# 配置 SSL 自动续期
+setup_ssl_renewal() {
+    print_step "配置 SSL 证书自动续期..."
+    
+    # 测试续期
+    if sudo certbot renew --dry-run; then
+        print_success "SSL 证书自动续期配置成功"
+        print_info "证书将在到期前自动续期"
+    else
+        print_warning "SSL 自动续期测试失败，请手动检查"
+    fi
+}
+
+# 生成带 HTTPS 的 Nginx 配置
+generate_nginx_config_https() {
+    local domain="$1"
+    local web_root="$2"
+    local api_backend="$3"
+    local config_file="$4"
+    local cert_path="/etc/letsencrypt/live/$domain/fullchain.pem"
+    local key_path="/etc/letsencrypt/live/$domain/privkey.pem"
+    
+    cat > "$config_file" << EOF
+# XBoard 前端 Nginx 配置 (HTTPS)
+# 生成时间: $(date)
+
+# HTTP 服务器 - 重定向到 HTTPS
+server {
+    listen 80;
+    server_name $domain;
+    
+    # Let's Encrypt 验证
+    location ^~ /.well-known/acme-challenge/ {
+        root $web_root;
+    }
+    
+    # 其他请求重定向到 HTTPS
+    location / {
+        return 301 https://\$server_name\$request_uri;
+    }
+}
+
+# HTTPS 服务器
+server {
+    listen 443 ssl http2;
+    server_name $domain;
+    
+    # SSL 证书配置
+    ssl_certificate $cert_path;
+    ssl_certificate_key $key_path;
+    
+    # SSL 优化配置
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers 'ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384';
+    ssl_prefer_server_ciphers off;
+    ssl_session_cache shared:SSL:10m;
+    ssl_session_timeout 10m;
+    ssl_stapling on;
+    ssl_stapling_verify on;
+    
+    # 网站根目录
+    root $web_root;
+    index index.html;
+    
+    # 访问日志
+    access_log /var/log/nginx/xboard-https-access.log;
+    error_log /var/log/nginx/xboard-https-error.log;
+    
+    # Gzip 压缩
+    gzip on;
+    gzip_vary on;
+    gzip_min_length 1024;
+    gzip_comp_level 6;
+    gzip_types text/plain text/css text/xml text/javascript 
+               application/json application/javascript application/xml+rss 
+               application/rss+xml font/truetype font/opentype 
+               application/vnd.ms-fontobject image/svg+xml;
+    
+    # SPA 路由支持
+    location / {
+        try_files \$uri \$uri/ /index.html;
+    }
+    
+    # API 反向代理
+    location /api {
+        proxy_pass $api_backend;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        
+        # WebSocket 支持
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection "upgrade";
+        
+        # 超时设置
+        proxy_connect_timeout 60s;
+        proxy_send_timeout 60s;
+        proxy_read_timeout 60s;
+    }
+    
+    # 静态资源缓存
+    location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+    }
+    
+    # 安全头
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-XSS-Protection "1; mode=block" always;
+    add_header Referrer-Policy "no-referrer-when-downgrade" always;
+    
+    # 隐藏 Nginx 版本号
+    server_tokens off;
+}
+EOF
+    
+    print_success "HTTPS Nginx 配置文件已生成: $config_file"
+}
+
+# 生成 Nginx 配置文件
+generate_nginx_config() {
+    local domain="$1"
+    local web_root="$2"
+    local api_backend="$3"
+    local config_file="$4"
+    
+    cat > "$config_file" << EOF
+# XBoard 前端 Nginx 配置
+# 生成时间: $(date)
+
+server {
+    listen 80;
+    server_name $domain;
+    
+    # 网站根目录
+    root $web_root;
+    index index.html;
+    
+    # 访问日志
+    access_log /var/log/nginx/xboard-access.log;
+    error_log /var/log/nginx/xboard-error.log;
+    
+    # Gzip 压缩
+    gzip on;
+    gzip_vary on;
+    gzip_min_length 1024;
+    gzip_comp_level 6;
+    gzip_types text/plain text/css text/xml text/javascript 
+               application/json application/javascript application/xml+rss 
+               application/rss+xml font/truetype font/opentype 
+               application/vnd.ms-fontobject image/svg+xml;
+    
+    # SPA 路由支持
+    location / {
+        try_files \$uri \$uri/ /index.html;
+    }
+    
+    # API 反向代理
+    location /api {
+        proxy_pass $api_backend;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        
+        # WebSocket 支持
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection "upgrade";
+        
+        # 超时设置
+        proxy_connect_timeout 60s;
+        proxy_send_timeout 60s;
+        proxy_read_timeout 60s;
+    }
+    
+    # 静态资源缓存
+    location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+    }
+    
+    # 安全头
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-XSS-Protection "1; mode=block" always;
+    add_header Referrer-Policy "no-referrer-when-downgrade" always;
+    
+    # 隐藏 Nginx 版本号
+    server_tokens off;
+}
+
+# HTTPS 配置 (需要配置SSL证书)
+# server {
+#     listen 443 ssl http2;
+#     server_name $domain;
+#     
+#     ssl_certificate /path/to/your/certificate.crt;
+#     ssl_certificate_key /path/to/your/private.key;
+#     
+#     # SSL 配置
+#     ssl_protocols TLSv1.2 TLSv1.3;
+#     ssl_ciphers HIGH:!aNULL:!MD5;
+#     ssl_prefer_server_ciphers on;
+#     
+#     # 其他配置同上...
+# }
+EOF
+    
+    print_success "Nginx 配置文件已生成: $config_file"
+}
+
+# 部署到 Nginx
+deploy_nginx() {
+    print_step "开始 Nginx 部署..."
+    
+    # 获取配置信息
+    read -p "请输入域名 (例: www.example.com 或 localhost): " domain
+    domain=${domain:-localhost}
+    
+    read -p "请输入网站根目录 (默认: /var/www/xboard): " web_root
+    web_root=${web_root:-/var/www/xboard}
+    
+    read -p "请输入后端API地址 (默认: http://localhost:7001): " api_backend
+    api_backend=${api_backend:-http://localhost:7001}
+    
+    # 询问是否配置 SSL
+    enable_ssl=false
+    ssl_email=""
+    
+    if [ "$domain" != "localhost" ] && [ "$domain" != "127.0.0.1" ]; then
+        echo ""
+        print_info "检测到您使用了真实域名: $domain"
+        if confirm "是否配置 HTTPS (SSL证书)？" "y"; then
+            enable_ssl=true
+            read -p "请输入您的邮箱地址 (用于SSL证书通知): " ssl_email
+            
+            # 验证邮箱格式
+            while [[ ! "$ssl_email" =~ ^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$ ]]; do
+                print_warning "邮箱格式不正确"
+                read -p "请重新输入邮箱地址: " ssl_email
+            done
+        fi
+    else
+        print_info "使用 localhost，跳过 SSL 配置"
+    fi
+    
+    # 确认信息
+    echo ""
+    print_info "═══ 部署配置确认 ═══"
+    echo "域名: $domain"
+    echo "网站目录: $web_root"
+    echo "后端API: $api_backend"
+    if [ "$enable_ssl" = true ]; then
+        echo "HTTPS: 启用"
+        echo "邮箱: $ssl_email"
+    else
+        echo "HTTPS: 不启用"
+    fi
+    echo ""
+    
+    if ! confirm "确认以上配置无误？" "y"; then
+        print_info "部署已取消"
+        return 1
+    fi
+    
+    # 创建网站目录
+    print_step "创建网站目录..."
+    sudo mkdir -p "$web_root"
+    
+    # 备份旧文件
+    if [ -d "$web_root" ] && [ "$(ls -A $web_root)" ]; then
+        print_step "备份现有文件..."
+        backup_name="backup-$(date +%Y%m%d-%H%M%S)"
+        sudo mkdir -p "$BACKUP_DIR"
+        sudo cp -r "$web_root" "$BACKUP_DIR/$backup_name"
+        print_success "备份已保存到: $BACKUP_DIR/$backup_name"
+    fi
+    
+    # 复制文件
+    print_step "复制文件到网站目录..."
+    sudo cp -r "$DIST_DIR"/* "$web_root/"
+    sudo chown -R www-data:www-data "$web_root" 2>/dev/null || sudo chown -R nginx:nginx "$web_root" 2>/dev/null || true
+    print_success "文件复制完成"
+    
+    # 生成 Nginx 配置 (先生成 HTTP 版本)
+    print_step "生成 Nginx 配置..."
+    config_file="$SCRIPT_DIR/nginx-xboard.conf"
+    generate_nginx_config "$domain" "$web_root" "$api_backend" "$config_file"
+    
+    # 应用配置并启动服务
+    print_step "应用 Nginx 配置..."
+    if [ -d "/etc/nginx/sites-available" ]; then
+        # Debian/Ubuntu 风格
+        sudo cp "$config_file" "/etc/nginx/sites-available/xboard"
+        sudo ln -sf "/etc/nginx/sites-available/xboard" "/etc/nginx/sites-enabled/xboard"
+    else
+        # CentOS/RHEL 风格
+        sudo cp "$config_file" "/etc/nginx/conf.d/xboard.conf"
+    fi
+    
+    # 测试配置
+    print_step "测试 Nginx 配置..."
+    if sudo nginx -t; then
+        print_success "Nginx 配置测试通过"
+        
+        # 重启 Nginx
+        print_step "重启 Nginx 服务..."
+        sudo systemctl restart nginx || sudo service nginx restart
+        print_success "Nginx 已重启"
+        
+        # 检查服务状态
+        if sudo systemctl is-active --quiet nginx 2>/dev/null || sudo service nginx status >/dev/null 2>&1; then
+            print_success "Nginx 服务运行正常"
+        else
+            print_error "Nginx 服务启动失败，请检查日志"
+            return 1
+        fi
+    else
+        print_error "Nginx 配置测试失败，请检查配置文件"
+        return 1
+    fi
+    
+    # 配置 SSL
+    if [ "$enable_ssl" = true ]; then
+        echo ""
+        print_step "开始配置 HTTPS..."
+        
+        # 确保 certbot 已安装
+        if ensure_certbot; then
+            # 申请证书
+            if request_ssl_certificate "$domain" "$web_root" "$ssl_email"; then
+                # 重新生成 HTTPS 配置
+                print_step "生成 HTTPS 配置..."
+                generate_nginx_config_https "$domain" "$web_root" "$api_backend" "$config_file"
+                
+                # 重新应用配置
+                if [ -d "/etc/nginx/sites-available" ]; then
+                    sudo cp "$config_file" "/etc/nginx/sites-available/xboard"
+                else
+                    sudo cp "$config_file" "/etc/nginx/conf.d/xboard.conf"
+                fi
+                
+                # 测试并重启
+                if sudo nginx -t; then
+                    sudo systemctl reload nginx || sudo service nginx reload
+                    print_success "HTTPS 配置已应用"
+                    
+                    # 配置自动续期
+                    setup_ssl_renewal
+                    
+                    echo ""
+                    print_success "═══ HTTPS 配置完成！ =══"
+                    print_info "HTTPS 访问地址: https://$domain"
+                    print_info "HTTP 会自动重定向到 HTTPS"
+                else
+                    print_error "HTTPS 配置测试失败"
+                fi
+            else
+                print_warning "SSL 证书申请失败，已保留 HTTP 配置"
+                print_info "您可以稍后手动申请证书"
+            fi
+        fi
+    fi
+    
+    echo ""
+    print_success "═══ Nginx 部署完成！ =══"
+    if [ "$enable_ssl" = true ] && [ -f "/etc/letsencrypt/live/$domain/fullchain.pem" ]; then
+        print_info "访问地址: https://$domain"
+    else
+        print_info "访问地址: http://$domain"
+    fi
+    print_info "网站目录: $web_root"
+    print_info "配置文件: $config_file"
+    
+    # 防火墙提示
+    echo ""
+    print_warning "重要提示："
+    echo "  请确保防火墙已开放以下端口："
+    echo "  - 80 (HTTP)"
+    if [ "$enable_ssl" = true ]; then
+        echo "  - 443 (HTTPS)"
+    fi
+    echo ""
+    echo "  常用命令："
+    echo "  Ubuntu/Debian: sudo ufw allow 80/tcp && sudo ufw allow 443/tcp"
+    echo "  CentOS/RHEL:   sudo firewall-cmd --add-service=http --permanent"
+    echo "                 sudo firewall-cmd --add-service=https --permanent"
+    echo "                 sudo firewall-cmd --reload"
+}
+
+#═══════════════════════════════════════════════════════════════════════
+# Docker 部署相关函数
+#═══════════════════════════════════════════════════════════════════════
+
+# 安装 Docker
+install_docker() {
+    print_step "安装 Docker..."
+    
+    curl -fsSL https://get.docker.com -o get-docker.sh
+    sudo sh get-docker.sh
+    sudo systemctl start docker
+    sudo systemctl enable docker
+    rm get-docker.sh
+    
+    print_success "Docker 安装完成"
+}
+
+# 确保 Docker 已安装
+ensure_docker() {
+    if command_exists docker; then
+        print_success "检测到 Docker 已安装"
+        docker --version
+    else
+        print_warning "未检测到 Docker"
+        if confirm "是否自动安装 Docker？" "y"; then
+            install_docker
+        else
+            print_error "Docker 是必需的，部署已取消"
+            exit 1
+        fi
+    fi
+}
+
+# 生成 Dockerfile
+generate_dockerfile() {
+    cat > "$SCRIPT_DIR/Dockerfile" << 'EOF'
+FROM nginx:alpine
+
+# 复制构建产物
+COPY dist/ /usr/share/nginx/html/
+
+# 复制 Nginx 配置
+COPY docker-nginx.conf /etc/nginx/conf.d/default.conf
+
+# 健康检查
+HEALTHCHECK --interval=30s --timeout=3s \
+    CMD wget --quiet --tries=1 --spider http://localhost/ || exit 1
+
+EXPOSE 80
+
+CMD ["nginx", "-g", "daemon off;"]
+EOF
+    
+    print_success "Dockerfile 已生成"
+}
+
+# 生成 Docker Nginx 配置
+generate_docker_nginx_config() {
+    local api_backend="$1"
+    
+    cat > "$SCRIPT_DIR/docker-nginx.conf" << EOF
+server {
+    listen 80;
+    server_name localhost;
+    
+    root /usr/share/nginx/html;
+    index index.html;
+    
+    gzip on;
+    gzip_vary on;
+    gzip_types text/plain text/css application/json application/javascript text/xml application/xml application/xml+rss text/javascript;
+    
+    location / {
+        try_files \$uri \$uri/ /index.html;
+    }
+    
+    location /api {
+        proxy_pass $api_backend;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+    }
+    
+    location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg)$ {
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+    }
+}
+EOF
+    
+    print_success "Docker Nginx 配置已生成"
+}
+
+# 生成 docker-compose.yml
+generate_docker_compose() {
+    local port="$1"
+    
+    cat > "$SCRIPT_DIR/docker-compose.yml" << EOF
+version: '3.8'
+
+services:
+  xboard-frontend:
+    build: .
+    container_name: xboard-frontend
+    restart: unless-stopped
+    ports:
+      - "$port:80"
+    networks:
+      - xboard-network
+    environment:
+      - TZ=Asia/Shanghai
+    volumes:
+      - ./logs:/var/log/nginx
+
+networks:
+  xboard-network:
+    driver: bridge
+EOF
+    
+    print_success "docker-compose.yml 已生成"
+}
+
+# Docker 部署
+deploy_docker() {
+    print_step "开始 Docker 部署..."
+    
+    # 获取配置
+    read -p "请输入后端API地址 (默认: http://host.docker.internal:7001): " api_backend
+    api_backend=${api_backend:-http://host.docker.internal:7001}
+    
+    read -p "请输入映射端口 (默认: 80): " port
+    port=${port:-80}
+    
+    # 确认配置
+    echo ""
+    print_info "═══ Docker 部署配置 ═══"
+    echo "后端API: $api_backend"
+    echo "映射端口: $port"
+    echo ""
+    
+    if ! confirm "确认配置无误？" "y"; then
+        print_info "部署已取消"
+        return 1
+    fi
+    
+    # 生成文件
+    generate_dockerfile
+    generate_docker_nginx_config "$api_backend"
+    generate_docker_compose "$port"
+    
+    # 构建镜像
+    if confirm "是否立即构建 Docker 镜像？" "y"; then
+        print_step "构建 Docker 镜像..."
+        docker build -t xboard-frontend:latest .
+        print_success "镜像构建完成"
+        
+        # 运行容器
+        if confirm "是否使用 docker-compose 启动服务？" "y"; then
+            print_step "启动 Docker 容器..."
+            docker-compose down 2>/dev/null || true
+            docker-compose up -d
+            
+            # 检查容器状态
+            sleep 3
+            if docker ps | grep -q xboard-frontend; then
+                print_success "容器启动成功"
+                
+                echo ""
+                print_success "═══ Docker 部署完成！ =══"
+                print_info "访问地址: http://localhost:$port"
+                print_info "容器名称: xboard-frontend"
+                print_info ""
+                print_info "管理命令:"
+                echo "  查看日志: docker-compose logs -f"
+                echo "  停止服务: docker-compose down"
+                echo "  重启服务: docker-compose restart"
+            else
+                print_error "容器启动失败，请检查 Docker 日志"
+            fi
+        else
+            print_info "Docker 文件已生成，您可以手动运行："
+            echo "  docker build -t xboard-frontend:latest ."
+            echo "  docker-compose up -d"
+        fi
+    else
+        print_info "Docker 文件已生成但未构建"
+    fi
+}
+
+#═══════════════════════════════════════════════════════════════════════
+# 简单部署（直接复制文件）
+#═══════════════════════════════════════════════════════════════════════
+
+deploy_simple() {
+    print_step "简单部署模式..."
+    
+    read -p "请输入目标目录 (例: /var/www/html): " target_dir
+    
+    if [ -z "$target_dir" ]; then
+        print_error "目标目录不能为空"
+        return 1
+    fi
+    
+    # 创建目录
+    if [ ! -d "$target_dir" ]; then
+        if confirm "目录不存在，是否创建？" "y"; then
+            sudo mkdir -p "$target_dir"
+        else
+            return 1
+        fi
+    fi
+    
+    # 备份
+    if [ -d "$target_dir" ] && [ "$(ls -A $target_dir)" ]; then
+        if confirm "目标目录不为空，是否备份现有文件？" "y"; then
+            backup_name="backup-$(date +%Y%m%d-%H%M%S)"
+            sudo mkdir -p "$BACKUP_DIR"
+            sudo cp -r "$target_dir" "$BACKUP_DIR/$backup_name"
+            print_success "备份已保存: $BACKUP_DIR/$backup_name"
+        fi
+    fi
+    
+    # 复制文件
+    print_step "复制文件..."
+    sudo cp -r "$DIST_DIR"/* "$target_dir/"
+    print_success "文件已复制到: $target_dir"
+    
+    echo ""
+    print_info "提示: 您还需要配置 Web 服务器指向该目录"
+}
+
+#═══════════════════════════════════════════════════════════════════════
+# 主菜单
+#═══════════════════════════════════════════════════════════════════════
+
+show_menu() {
+    echo ""
+    echo "请选择部署方式:"
+    echo ""
+    echo "  1) Nginx 部署 (推荐) - 自动配置 Nginx"
+    echo "  2) Docker 部署 - 容器化部署"
+    echo "  3) 简单部署 - 仅复制文件"
+    echo "  4) 查看部署信息"
+    echo "  5) 退出"
+    echo ""
+    read -p "请输入选项 [1-5]: " choice
+    
+    case $choice in
+        1)
+            ensure_nginx
+            deploy_nginx
+            ;;
+        2)
+            ensure_docker
+            deploy_docker
+            ;;
+        3)
+            deploy_simple
+            ;;
+        4)
+            show_deploy_info
+            ;;
+        5)
+            print_info "退出部署脚本"
+            exit 0
+            ;;
+        *)
+            print_error "无效的选项"
+            show_menu
+            ;;
+    esac
+}
+
+# 显示部署信息
+show_deploy_info() {
+    echo ""
+    print_info "═══ 部署环境信息 =══"
+    echo ""
+    echo "操作系统: $OS $OS_VERSION"
+    echo "脚本目录: $SCRIPT_DIR"
+    echo "构建目录: $DIST_DIR"
+    echo "备份目录: $BACKUP_DIR"
+    echo "日志文件: $LOG_FILE"
+    echo ""
+    
+    if [ -d "$DIST_DIR" ]; then
+        dist_size=$(du -sh "$DIST_DIR" | cut -f1)
+        file_count=$(find "$DIST_DIR" -type f | wc -l)
+        echo "构建大小: $dist_size"
+        echo "文件数量: $file_count"
+    else
+        print_warning "未找到构建目录"
+    fi
+    
+    echo ""
+    echo "已安装的工具:"
+    command_exists nginx && echo "  ✓ Nginx: $(nginx -v 2>&1 | cut -d/ -f2)" || echo "  ✗ Nginx"
+    command_exists docker && echo "  ✓ Docker: $(docker --version | cut -d' ' -f3 | tr -d ',')" || echo "  ✗ Docker"
+    echo ""
+}
+
+#═══════════════════════════════════════════════════════════════════════
+# 主程序
+#═══════════════════════════════════════════════════════════════════════
+
+main() {
+    # 初始化
+    print_banner
+    log "===== 部署开始 ====="
+    
+    # 检查
+    check_root
+    detect_os
+    check_prerequisites
+    
+    # 显示菜单
+    show_menu
+    
+    # 询问是否继续
+    echo ""
+    if confirm "是否继续其他操作？" "n"; then
+        show_menu
+    fi
+    
+    echo ""
+    print_success "感谢使用 XBoard 部署脚本！"
+    log "===== 部署完成 ====="
+}
+
+# 错误处理
+trap 'print_error "部署过程中发生错误，请查看日志: $LOG_FILE"; log "ERROR: $BASH_COMMAND failed"' ERR
+
+# 运行主程序
+main "$@"
+

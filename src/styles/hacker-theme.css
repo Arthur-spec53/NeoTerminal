@@ -1,0 +1,394 @@
+/* ==========================================
+   XBOARD HACKER THEME - 全局样式
+   灵感来源：Matrix, Mr. Robot, 终端界面
+   ========================================== */
+
+/* ===== 1. 颜色变量定义 ===== */
+:root {
+  /* Matrix 绿色主题 */
+  --hacker-bg: #000000;
+  --hacker-bg-alt: #0a0a0a;
+  --hacker-primary: #00ff00;
+  --hacker-primary-dim: #00aa00;
+  --hacker-primary-bright: #00ff41;
+  --hacker-secondary: #008800;
+  --hacker-text: #00ff00;
+  --hacker-text-dim: #00aa00;
+  --hacker-border: #00ff00;
+  
+  /* 辅助颜色 */
+  --hacker-error: #ff0000;
+  --hacker-warning: #ffff00;
+  --hacker-success: #00ff00;
+  
+  /* 字体 */
+  --font-mono: 'Courier New', 'Consolas', 'Monaco', monospace;
+  
+  /* 发光效果 */
+  --glow-sm: 0 0 5px var(--hacker-primary);
+  --glow-md: 0 0 10px var(--hacker-primary);
+  --glow-lg: 0 0 20px var(--hacker-primary);
+}
+
+/* ===== 2. 基础样式重置 ===== */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body {
+  background: var(--hacker-bg);
+  color: var(--hacker-text);
+  font-family: var(--font-mono);
+  font-size: 14px;
+  line-height: 1.5;
+  overflow-x: hidden;
+}
+
+/* ===== 3. CRT 屏幕效果 ===== */
+
+/* 扫描线效果 */
+.scanlines {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(
+    to bottom,
+    rgba(0, 0, 0, 0) 50%,
+    rgba(0, 255, 0, 0.02) 50%
+  );
+  background-size: 100% 4px;
+  pointer-events: none;
+  z-index: 9999;
+  animation: scan 8s linear infinite;
+}
+
+@keyframes scan {
+  0% { background-position: 0 0; }
+  100% { background-position: 0 4px; }
+}
+
+/* CRT 屏幕弯曲和发光效果 */
+.crt-effect {
+  text-shadow: var(--glow-sm);
+  animation: flicker 0.15s infinite;
+}
+
+@keyframes flicker {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.98; }
+}
+
+/* 屏幕整体发光 */
+#app {
+  filter: contrast(1.1) brightness(1.05);
+}
+
+/* ===== 4. 文字效果 ===== */
+
+/* 闪烁光标 */
+.cursor::after {
+  content: '█';
+  animation: blink 1s step-end infinite;
+  color: var(--hacker-primary);
+}
+
+@keyframes blink {
+  0%, 50% { opacity: 1; }
+  51%, 100% { opacity: 0; }
+}
+
+/* 打字机效果 */
+.typing-text {
+  overflow: hidden;
+  white-space: nowrap;
+  border-right: 2px solid var(--hacker-primary);
+  animation: typing 2s steps(40) 1s forwards, blink-caret 0.75s step-end infinite;
+}
+
+@keyframes typing {
+  from { width: 0; }
+  to { width: 100%; }
+}
+
+@keyframes blink-caret {
+  50% { border-color: transparent; }
+}
+
+/* 文字发光 */
+.text-glow {
+  text-shadow: var(--glow-md);
+}
+
+.text-glow-strong {
+  text-shadow: var(--glow-lg);
+}
+
+/* ===== 5. ASCII 边框样式 ===== */
+
+.ascii-border {
+  border: 1px solid var(--hacker-border);
+  position: relative;
+  padding: 1rem;
+}
+
+.ascii-border::before {
+  content: '╔' attr(data-title) '╗';
+  position: absolute;
+  top: -1px;
+  left: -1px;
+  right: -1px;
+  background: var(--hacker-bg);
+  color: var(--hacker-primary);
+  padding: 0 0.5rem;
+}
+
+/* ===== 6. 按钮样式 ===== */
+
+.hacker-button {
+  background: transparent;
+  color: var(--hacker-primary);
+  border: 1px solid var(--hacker-primary);
+  padding: 0.5rem 1.5rem;
+  font-family: var(--font-mono);
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  text-shadow: var(--glow-sm);
+  position: relative;
+}
+
+.hacker-button::before {
+  content: '[ ';
+}
+
+.hacker-button::after {
+  content: ' ]';
+}
+
+.hacker-button:hover {
+  background: var(--hacker-primary);
+  color: var(--hacker-bg);
+  box-shadow: var(--glow-md);
+  text-shadow: none;
+}
+
+.hacker-button:active {
+  transform: scale(0.98);
+}
+
+.hacker-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ===== 7. 输入框样式 ===== */
+
+.hacker-input {
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--hacker-primary);
+  color: var(--hacker-primary);
+  font-family: var(--font-mono);
+  font-size: 14px;
+  padding: 0.5rem 0;
+  outline: none;
+  width: 100%;
+  caret-color: var(--hacker-primary);
+  text-shadow: var(--glow-sm);
+}
+
+.hacker-input::placeholder {
+  color: var(--hacker-primary-dim);
+  opacity: 0.6;
+}
+
+.hacker-input:focus {
+  border-bottom-color: var(--hacker-primary-bright);
+  box-shadow: 0 1px 0 0 var(--hacker-primary);
+}
+
+/* ===== 8. 进度条样式 ===== */
+
+.hacker-progress {
+  font-family: var(--font-mono);
+  color: var(--hacker-primary);
+}
+
+.hacker-progress-bar {
+  display: inline-block;
+}
+
+.hacker-progress-bar::before {
+  content: '[';
+}
+
+.hacker-progress-bar::after {
+  content: ']';
+}
+
+/* ===== 9. 表格样式 ===== */
+
+.hacker-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--font-mono);
+}
+
+.hacker-table th,
+.hacker-table td {
+  border: 1px solid var(--hacker-primary);
+  padding: 0.5rem 1rem;
+  text-align: left;
+  color: var(--hacker-primary);
+}
+
+.hacker-table th {
+  background: var(--hacker-bg-alt);
+  text-shadow: var(--glow-sm);
+}
+
+.hacker-table tr:hover {
+  background: rgba(0, 255, 0, 0.05);
+}
+
+/* ===== 10. 滚动条样式 ===== */
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--hacker-bg);
+  border: 1px solid var(--hacker-primary-dim);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--hacker-primary);
+  box-shadow: inset 0 0 5px rgba(0, 255, 0, 0.5);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--hacker-primary-bright);
+}
+
+/* Firefox */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--hacker-primary) var(--hacker-bg);
+}
+
+/* ===== 11. 选择文字样式 ===== */
+
+::selection {
+  background: var(--hacker-primary);
+  color: var(--hacker-bg);
+  text-shadow: none;
+}
+
+::-moz-selection {
+  background: var(--hacker-primary);
+  color: var(--hacker-bg);
+  text-shadow: none;
+}
+
+/* ===== 12. 动画效果 ===== */
+
+/* 数据加载动画 */
+@keyframes data-stream {
+  0% { opacity: 0; transform: translateY(-10px); }
+  50% { opacity: 1; }
+  100% { opacity: 0; transform: translateY(10px); }
+}
+
+.data-stream {
+  animation: data-stream 2s ease-in-out infinite;
+}
+
+/* 脉冲效果 */
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.pulse {
+  animation: pulse 2s ease-in-out infinite;
+}
+
+/* 字符闪烁 */
+@keyframes char-flicker {
+  0%, 100% { opacity: 1; }
+  45%, 55% { opacity: 0.3; }
+}
+
+.char-flicker {
+  animation: char-flicker 0.1s infinite;
+}
+
+/* ===== 13. 实用工具类 ===== */
+
+.terminal-prompt::before {
+  content: '> ';
+  color: var(--hacker-primary-bright);
+}
+
+.command-prefix::before {
+  content: '$ ';
+  color: var(--hacker-primary-bright);
+}
+
+.list-marker::before {
+  content: '[*] ';
+  color: var(--hacker-primary-bright);
+}
+
+.error-marker::before {
+  content: '[!] ';
+  color: var(--hacker-error);
+}
+
+.success-marker::before {
+  content: '[✓] ';
+  color: var(--hacker-success);
+}
+
+/* ===== 14. 响应式 ===== */
+
+@media (max-width: 768px) {
+  html, body {
+    font-size: 12px;
+  }
+  
+  .hacker-button {
+    padding: 0.4rem 1rem;
+    font-size: 12px;
+  }
+}
+
+/* ===== 15. 无障碍支持 ===== */
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  border: 0;
+}
+
+/* 减少动画（用户偏好） */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
