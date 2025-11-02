@@ -1,12 +1,14 @@
-# XBoard 前端终极部署指南 v2.0
+# NeoTerminal 终极部署指南 v2.0
 
-<sub>⚠️ **部署方式说明**：本项目专注于 Nginx 部署，已针对 XBoard 后端的 API 和 CORS 配置进行优化。暂不提供 Docker 部署方案，如需容器化部署，请自行配置。</sub>
+<sub>⚠️ **部署方式说明**：NeoTerminal 专注于 Nginx 部署，已针对 XBoard 后端的 API 和 CORS 配置进行优化。暂不提供 Docker 部署方案，如需容器化部署，请自行配置。</sub>
 
 ---
 
 ## 🎯 概述
 
-这是一个**终极保姆级**的一键部署脚本，可以从**零生产环境**开始，自动完成所有配置和部署工作。
+NeoTerminal 提供**终极保姆级**的一键部署脚本，可以从**零生产环境**开始，自动完成所有配置和部署工作。
+
+*终端美学，极客之选 - Terminal Aesthetics, Geek's Choice*
 
 ### ✨ 全新特性 v2.0
 
@@ -59,7 +61,7 @@
 
 ```bash
 # 1. 进入项目目录
-cd /path/to/xboard-frontend
+cd /path/to/NeoTerminal
 
 # 2. 给脚本添加执行权限
 chmod +x deploy.sh
@@ -145,7 +147,7 @@ sudo ./deploy.sh
   2) Docker 部署
   3) 简单部署 (仅复制文件)
   4) 查看部署信息
-  5) 卸载 XBoard 前端
+  5) 卸载 NeoTerminal
   6) 退出
 ```
 
@@ -301,7 +303,7 @@ sudo ./deploy.sh --uninstall
 
 ```
 ═══════════════════════════════════════════════════════════════════════
-  XBoard 前端部署报告
+  NeoTerminal 部署报告
 ═══════════════════════════════════════════════════════════════════════
 
 生成时间: 2025-11-02 15:30:45 CST
@@ -565,5 +567,6 @@ sudo certbot certificates
 
 ---
 
-**享受您的 XBoard 前端部署之旅！** 🎊
+**享受您的 NeoTerminal 部署之旅！** 🎊  
+*终端美学，极客之选 - Terminal Aesthetics, Geek's Choice*
 
