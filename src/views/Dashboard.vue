@@ -3,8 +3,26 @@
     <!-- 页面头部 -->
     <div class="dashboard-header">
       <TerminalPrompt :user="userStore.email?.split('@')[0] || 'user'" :host="siteName" />
-      <div class="header-time">
-        [SYS_TIME: {{ currentTime }}]
+      <div class="header-actions">
+        <div class="header-time">
+          [SYS_TIME: {{ currentTime }}]
+        </div>
+        <!-- 用户菜单 -->
+        <div class="user-menu" @click="toggleUserMenu">
+          <Icon icon="lucide:user" class="user-icon" />
+          <span class="user-email">{{ userStore.email || 'User' }}</span>
+          <Icon icon="lucide:chevron-down" class="menu-arrow" :class="{ 'menu-open': showUserMenu }" />
+          
+          <!-- 下拉菜单 -->
+          <transition name="menu-fade">
+            <div v-if="showUserMenu" class="user-dropdown" @click.stop>
+              <div class="menu-item" @click="handleLogout">
+                <Icon icon="lucide:log-out" />
+                <span>退出登录</span>
+              </div>
+            </div>
+          </transition>
+        </div>
       </div>
     </div>
     
@@ -307,20 +325,26 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, onUnmounted, computed } from 'vue'
+import { useRouter } from 'vue-router'
 import { useUserStore } from '@/stores/user'
+import { useAuthStore } from '@/stores/auth'
 import { noticeService, statService, configService } from '@/api'
 import { useClipboard } from '@vueuse/core'
 import { log, warn, logError } from '@/utils/logger'
+import { Icon } from '@iconify/vue'
 import GeekCard from '@/components/common/GeekCard.vue'
 import GeekButton from '@/components/common/GeekButton.vue'
 import GeekProgressBar from '@/components/common/GeekProgressBar.vue'
 import TerminalPrompt from '@/components/effects/TerminalPrompt.vue'
 
+const router = useRouter()
 const userStore = useUserStore()
+const authStore = useAuthStore()
 const { copy } = useClipboard()
 
 const urlCopied = ref(false)
+const showUserMenu = ref(false)
 
 const currentTime = ref('')
 const notices = ref<any[]>([])
@@ -755,21 +779,53 @@ const fetchSiteConfig = async () => {
     const response = await configService.fetchGuest()
     
     if (response && response.data) {
-      const { app_name, app_description } = response.data
+      const { app_name } = response.data
       
-      // 优先使用 app_name，如果为空或为默认值则使用 app_description 或默认"奇库"
+      log('[Dashboard] 配置数据:', { app_name })
+      
+      // 只使用 app_name，如果为空或是XBoard则使用默认"奇库"
       if (app_name && app_name !== 'XBoard' && app_name.trim() !== '') {
         siteName.value = app_name.trim()
         log('[Dashboard] ✅ 使用 app_name 作为站点名称:', siteName.value)
-      } else if (app_description && app_description.trim() !== '') {
-        siteName.value = app_description.trim()
-        log('[Dashboard] ✅ 使用 app_description 作为站点名称:', siteName.value)
       } else {
         log('[Dashboard] ✅ 使用默认站点名称: 奇库')
       }
     }
   } catch (err) {
     warn('[Dashboard] ⚠️ 获取站点配置失败，使用默认值')
+  }
+}
+
+// 切换用户菜单
+const toggleUserMenu = () => {
+  showUserMenu.value = !showUserMenu.value
+}
+
+// 处理退出登录
+const handleLogout = async () => {
+  try {
+    log('[Dashboard] 执行退出登录')
+    
+    // 清除认证状态
+    authStore.logout()
+    
+    // 清除用户数据
+    userStore.$reset()
+    
+    log('[Dashboard] ✅ 退出登录成功')
+    
+    // 跳转到登录页
+    await router.push('/login')
+  } catch (error) {
+    logError('[Dashboard] ❌ 退出登录失败:', error)
+  }
+}
+
+// 点击外部关闭菜单
+const handleClickOutside = (event: MouseEvent) => {
+  const target = event.target as HTMLElement
+  if (!target.closest('.user-menu')) {
+    showUserMenu.value = false
   }
 }
 
@@ -786,6 +842,14 @@ onMounted(async () => {
   
   // 获取流量明细
   fetchTrafficLogs()
+  
+  // 监听点击外部关闭菜单
+  document.addEventListener('click', handleClickOutside)
+})
+
+onUnmounted(() => {
+  // 移除事件监听
+  document.removeEventListener('click', handleClickOutside)
 })
 </script>
 
@@ -885,11 +949,25 @@ onMounted(async () => {
   transition: all 0.3s ease;
   object-fit: contain; /* 保持图片比例 */
   cursor: pointer; /* 添加指针样式，暗示可点击 */
+  background: transparent; /* 确保透明背景 */
 }
 
 .notice-image img:hover {
   border-color: var(--hacker-primary-bright);
   box-shadow: 0 0 20px var(--hacker-primary);
+}
+
+/* 移动端图片优化 */
+@media (max-width: 640px) {
+  .notice-image {
+    padding: 0.25rem;
+    margin: 0.5rem 0;
+  }
+  
+  .notice-image img {
+    max-width: 100%;
+    max-height: 200px;
+  }
 }
 
 /* 公告标签 */
@@ -1285,9 +1363,113 @@ onMounted(async () => {
   border-bottom: 1px solid var(--hacker-primary);
 }
 
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 2rem;
+}
+
 .header-time {
   font-size: 12px;
   color: var(--hacker-text-dim);
+}
+
+/* 用户菜单 */
+.user-menu {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  background: rgba(0, 255, 65, 0.05);
+  border: 1px solid var(--hacker-primary-dim);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  user-select: none;
+}
+
+.user-menu:hover {
+  background: rgba(0, 255, 65, 0.1);
+  border-color: var(--hacker-primary);
+  box-shadow: 0 0 10px rgba(0, 255, 65, 0.3);
+}
+
+.user-icon {
+  font-size: 1.2rem;
+  color: var(--hacker-primary);
+}
+
+.user-email {
+  font-size: 0.9rem;
+  color: var(--hacker-primary);
+  font-family: var(--font-mono);
+}
+
+.menu-arrow {
+  font-size: 1rem;
+  color: var(--hacker-primary);
+  transition: transform 0.3s ease;
+}
+
+.menu-arrow.menu-open {
+  transform: rotate(180deg);
+}
+
+/* 下拉菜单 */
+.user-dropdown {
+  position: absolute;
+  top: calc(100% + 0.5rem);
+  right: 0;
+  min-width: 200px;
+  background: rgba(0, 0, 0, 0.95);
+  border: 1px solid var(--hacker-primary);
+  border-radius: 4px;
+  box-shadow: 0 4px 20px rgba(0, 255, 65, 0.3);
+  z-index: 1000;
+  overflow: hidden;
+}
+
+.menu-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  color: var(--hacker-primary);
+  font-family: var(--font-mono);
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border-bottom: 1px solid rgba(0, 255, 65, 0.1);
+}
+
+.menu-item:last-child {
+  border-bottom: none;
+}
+
+.menu-item:hover {
+  background: rgba(0, 255, 65, 0.1);
+  padding-left: 1.25rem;
+}
+
+.menu-item svg {
+  font-size: 1.1rem;
+}
+
+/* 菜单过渡动画 */
+.menu-fade-enter-active,
+.menu-fade-leave-active {
+  transition: all 0.3s ease;
+}
+
+.menu-fade-enter-from {
+  opacity: 0;
+  transform: translateY(-10px);
+}
+
+.menu-fade-leave-to {
+  opacity: 0;
+  transform: translateY(-10px);
 }
 
 .dashboard-section {
@@ -1347,20 +1529,83 @@ onMounted(async () => {
   opacity: 0.5;
 }
 
-/* 响应式 */
-@media (max-width: 768px) {
+/* ============================================
+   移动端适配
+============================================ */
+@media (max-width: 1023px) {
   .dashboard-page {
     padding: 1rem;
   }
   
-  .stats-grid {
-    grid-template-columns: 1fr;
-  }
-  
   .dashboard-header {
     flex-direction: column;
-    gap: 0.5rem;
+    gap: 1rem;
     align-items: flex-start;
+  }
+  
+  .header-actions {
+    flex-direction: column;
+    gap: 0.5rem;
+    width: 100%;
+  }
+  
+  .user-menu {
+    width: 100%;
+    justify-content: space-between;
+  }
+  
+  .user-dropdown {
+    left: 0;
+    right: 0;
+  }
+  
+  .stats-grid {
+    grid-template-columns: 1fr;
+    gap: 1rem;
+  }
+  
+  .stat-item {
+    padding: 1rem;
+  }
+  
+  .traffic-chart-container {
+    height: 200px;
+  }
+  
+  .notice-header {
+    flex-wrap: wrap;
+  }
+  
+  .notice-date {
+    margin-left: 0;
+    width: 100%;
+  }
+}
+
+/* 小屏手机适配 */
+@media (max-width: 640px) {
+  .dashboard-page {
+    padding: 0.5rem;
+  }
+  
+  .section-title {
+    font-size: 14px;
+  }
+  
+  .stat-value {
+    font-size: 20px;
+  }
+  
+  .stat-label {
+    font-size: 10px;
+  }
+  
+  .user-email {
+    display: none;
+  }
+  
+  .traffic-chart-container {
+    height: 150px;
   }
 }
 </style>

@@ -12,7 +12,7 @@ export default defineConfig({
   },
   // 环境变量配置
   define: {
-    'import.meta.env.VITE_API_BASE_URL': JSON.stringify('https://oddhouses.com')
+    'import.meta.env.VITE_API_BASE_URL': JSON.stringify('/api/v1')
   },
   server: {
     port: 5173,

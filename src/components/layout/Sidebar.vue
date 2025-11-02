@@ -1,17 +1,14 @@
 <template>
-  <aside class="sidebar">
+  <aside class="sidebar" :class="{ 'open': isOpen }">
     <div class="sidebar-header">
       <router-link to="/" class="logo-link">
-        <pre class="ascii-logo">
-╦ ╦╔╗ ╔═╗╔═╗╦═╗╔╦╗
-╔╩╦╝╠╩╗║ ║╠═╣╠╦╝ ║║
-╩ ╚═╚═╝╚═╝╩ ╩╩╚══╩╝</pre>
+        <pre class="ascii-logo">{{ asciiLogo }}</pre>
       </router-link>
     </div>
     <nav class="main-nav">
       <ul>
         <li v-for="item in navigation" :key="item.name">
-          <router-link :to="item.path" class="nav-link" active-class="active">
+          <router-link :to="item.path" class="nav-link" active-class="active" @click="handleNavClick">
             <span class="nav-icon">{{ item.icon }}</span>
             <span class="nav-text">{{ item.name }}</span>
           </router-link>
@@ -25,6 +22,34 @@
 </template>
 
 <script setup lang="ts">
+import { ref, onMounted } from 'vue'
+import { configService } from '@/api'
+import { log, warn } from '@/utils/logger'
+
+// Props
+interface Props {
+  isOpen?: boolean
+}
+
+withDefaults(defineProps<Props>(), {
+  isOpen: false
+})
+
+// Emits
+const emit = defineEmits<{
+  close: []
+}>()
+
+const siteName = ref('奇库')
+const asciiLogo = ref('')
+
+// 点击导航项时关闭侧边栏（移动端）
+const handleNavClick = () => {
+  if (window.innerWidth < 1024) {
+    emit('close')
+  }
+}
+
 const navigation = [
   { name: '仪表盘', path: '/dashboard', icon: '>' },
   { name: '使用文档', path: '/docs', icon: '?' },
@@ -36,6 +61,70 @@ const navigation = [
   { name: '我的工单', path: '/user/tickets', icon: '!' },
   { name: '流量明细', path: '/user/traffic', icon: '~' },
 ]
+
+// 生成 ASCII 艺术字
+const generateAsciiLogo = (name: string) => {
+  // 预设的 ASCII 艺术字
+  const asciiArtPresets: Record<string, string> = {
+    '奇库': `
+ ██████╗ ██╗██╗  ██╗██╗   ██╗
+██╔═══██╗██║██║ ██╔╝██║   ██║
+██║   ██║██║█████╔╝ ██║   ██║
+██║▄▄ ██║██║██╔═██╗ ██║   ██║
+╚██████╔╝██║██║  ██╗╚██████╔╝
+ ╚══▀▀═╝ ╚═╝╚═╝  ╚═╝ ╚═════╝`,
+    'XBoard': `
+╦ ╦╔╗ ╔═╗╔═╗╦═╗╔╦╗
+╔╩╦╝╠╩╗║ ║╠═╣╠╦╝ ║║
+╩ ╚═╚═╝╚═╝╩ ╩╩╚══╩╝`
+  }
+  
+  // 如果有预设，使用预设
+  if (asciiArtPresets[name]) {
+    return asciiArtPresets[name]
+  }
+  
+  // 否则使用简化的边框风格
+  const nameChars = name.split('').join(' ')
+  const borderLength = nameChars.length + 4
+  const border = '═'.repeat(borderLength)
+  
+  return `
+╔${border}╗
+║  ${nameChars}  ║
+╚${border}╝`
+}
+
+// 获取站点配置
+const fetchSiteConfig = async () => {
+  try {
+    const response = await configService.fetchGuest()
+    if (response && response.data) {
+      const { app_name } = response.data
+      
+      // 只使用 app_name，如果为空或是XBoard则使用默认"奇库"
+      if (app_name && app_name !== 'XBoard' && app_name.trim() !== '') {
+        siteName.value = app_name.trim()
+        log('[Sidebar] ✅ 使用 app_name 作为站点名称:', siteName.value)
+      } else {
+        log('[Sidebar] ✅ 使用默认站点名称: 奇库')
+      }
+      
+      // 生成 ASCII 艺术字
+      asciiLogo.value = generateAsciiLogo(siteName.value)
+    }
+  } catch (error) {
+    warn('[Sidebar] ⚠️ 获取站点配置失败，使用默认值')
+    asciiLogo.value = generateAsciiLogo(siteName.value)
+  }
+}
+
+onMounted(() => {
+  // 先设置默认 ASCII logo
+  asciiLogo.value = generateAsciiLogo(siteName.value)
+  // 然后尝试加载配置
+  fetchSiteConfig()
+})
 </script>
 
 <style scoped>
@@ -50,8 +139,28 @@ const navigation = [
   border-right: 1px solid var(--hacker-border);
   display: flex;
   flex-direction: column;
-  z-index: 100;
+  z-index: 1000;
   box-shadow: var(--glow-lg);
+  transition: transform 0.3s ease;
+}
+
+/* 移动端适配 */
+@media (max-width: 1023px) {
+  .sidebar {
+    transform: translateX(-100%);
+  }
+  
+  .sidebar.open {
+    transform: translateX(0);
+  }
+}
+
+/* 小屏手机适配 */
+@media (max-width: 640px) {
+  .sidebar {
+    width: 280px;
+    max-width: 85vw;
+  }
 }
 
 .sidebar-header {
@@ -63,15 +172,33 @@ const navigation = [
 .logo-link {
   text-decoration: none;
   display: block;
+  overflow-x: auto;
 }
 
 .ascii-logo {
-  font-size: 8px;
-  line-height: 1;
-  color: var(--hacker-primary-bright);
-  text-shadow: var(--glow-sm);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.1;
+  color: var(--hacker-primary);
+  text-shadow: 0 0 5px rgba(0, 255, 65, 0.5),
+               0 0 10px rgba(0, 255, 65, 0.3);
+  animation: glow-pulse 2s ease-in-out infinite;
   margin: 0;
+  padding: 0.5rem;
   white-space: pre;
+  text-align: center;
+}
+
+@keyframes glow-pulse {
+  0%, 100% {
+    text-shadow: 0 0 5px rgba(0, 255, 65, 0.5),
+                 0 0 10px rgba(0, 255, 65, 0.3);
+  }
+  50% {
+    text-shadow: 0 0 8px rgba(0, 255, 65, 0.7),
+                 0 0 15px rgba(0, 255, 65, 0.5),
+                 0 0 20px rgba(0, 255, 65, 0.3);
+  }
 }
 
 .main-nav {

@@ -11,6 +11,8 @@
 
 [在线演示](#) | [快速开始](#-快速开始) | [部署文档](#-部署) | [功能特性](#-功能特性)
 
+<sub>⚠️ 本项目仅为前端主题，需配合 [XBoard 后端](https://github.com/cedar2025/Xboard) 使用。推荐使用 Nginx 部署，暂不提供 Docker 部署方案。详见 [DEPLOYMENT_NOTE.md](./DEPLOYMENT_NOTE.md)</sub>
+
 </div>
 
 ---
