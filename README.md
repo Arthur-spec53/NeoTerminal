@@ -121,19 +121,15 @@ English | [简体中文](README_CN.md)
 
 ### Installation
 
-```bash
-# Clone the repository
-git clone https://github.com/Arthur-spec53/NeoTerminal.git
-cd NeoTerminal
+在正常使用场景下，推荐直接使用已构建好的前端资源包或一键部署脚本。下面的命令仅供需要自行构建的运维或开发人员参考：
 
-# Install dependencies
+```bash
+# Install dependencies (only required if you build from source)
 npm install
 
-# Start development server
-npm run dev
+# Build for production
+npm run build
 ```
-
-Visit `http://localhost:5173` to see the theme in action.
 
 ---
 

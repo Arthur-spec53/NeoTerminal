@@ -43,8 +43,8 @@
             <div v-if="notice.img_url" class="notice-image">
               <img :src="notice.img_url" :alt="notice.title" @error="handleImageError" />
             </div>
-            <!-- 公告内容 -->
-            <div class="notice-content" v-html="notice.content"></div>
+            <!-- 公告内容（经过 HTML 清洗，防止 XSS） -->
+            <div class="notice-content" v-html="sanitizeHtml(notice.content)"></div>
             <!-- 公告标签 -->
             <div v-if="notice.tags && notice.tags.length > 0" class="notice-tags">
               <span v-for="tag in notice.tags" :key="tag" class="notice-tag">[{{ tag }}]</span>
@@ -329,6 +329,7 @@ import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useUserStore } from '@/stores/user'
 import { useAuthStore } from '@/stores/auth'
+import { sanitizeHtml } from '@/utils/sanitize'
 import { noticeService, statService, configService } from '@/api'
 import { useClipboard } from '@vueuse/core'
 import { log, warn, logError } from '@/utils/logger'

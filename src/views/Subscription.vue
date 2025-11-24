@@ -166,7 +166,7 @@
       <div class="qr-content">
         <button @click="showQR = false" class="close-btn">✕</button>
         <h3>订阅二维码</h3>
-        <div id="qrcode" class="qr-code"></div>
+        <canvas ref="qrCanvas" class="qr-code"></canvas>
         <p class="qr-hint">使用手机客户端扫描此二维码</p>
       </div>
     </div>
@@ -176,6 +176,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
+import QRCode from 'qrcode'
 import { useUserStore } from '@/stores/user'
 import TerminalPrompt from '@/components/effects/TerminalPrompt.vue'
 import GeekCard from '@/components/common/GeekCard.vue'
@@ -186,6 +187,7 @@ const loading = ref(false)
 const error = ref('')
 const isCopied = ref(false)
 const showQR = ref(false)
+const qrCanvas = ref<HTMLCanvasElement | null>(null)
 const urlInput = ref<HTMLInputElement>()
 
 const subscription = computed(() => userStore.subscription)
@@ -268,40 +270,31 @@ const openUrl = () => {
   window.open(subscription.value.subscribe_url, '_blank')
 }
 
-// 显示二维码
+// 显示二维码（使用本地 QRCode 库，不再依赖外部 CDN）
 const showQRCode = async () => {
   if (!subscription.value) return
-  
-  showQR.value = true
-  
-  // 等待 DOM 更新
-  await new Promise(resolve => setTimeout(resolve, 100))
-  
-  // 动态加载 QRCode 库
-  if (typeof (window as any).QRCode === 'undefined') {
-    const script = document.createElement('script')
-    script.src = 'https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js'
-    script.onload = () => generateQR()
-    document.head.appendChild(script)
-  } else {
-    generateQR()
-  }
-}
 
-// 生成二维码
-const generateQR = () => {
-  const qrContainer = document.getElementById('qrcode')
-  if (!qrContainer || !subscription.value) return
-  
-  qrContainer.innerHTML = ''
-  
-  new (window as any).QRCode(qrContainer, {
-    text: subscription.value.subscribe_url,
+  showQR.value = true
+
+  // 等待 DOM 更新，确保 canvas 已渲染
+  await new Promise(resolve => setTimeout(resolve, 0))
+
+  if (!qrCanvas.value) return
+
+  // 清空画布
+  const canvas = qrCanvas.value
+  const ctx = canvas.getContext('2d')
+  if (ctx) {
+    ctx.clearRect(0, 0, canvas.width, canvas.height)
+  }
+
+  await QRCode.toCanvas(canvas, subscription.value.subscribe_url, {
     width: 256,
-    height: 256,
-    colorDark: '#00ff41',
-    colorLight: '#000000',
-    correctLevel: (window as any).QRCode.CorrectLevel.H
+    margin: 1,
+    color: {
+      dark: '#00ff41',
+      light: '#000000'
+    }
   })
 }
 

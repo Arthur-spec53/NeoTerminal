@@ -50,7 +50,8 @@
               设备数量: {{ plan.device_limit || '无限制' }}
             </div>
           </div>
-          <div class="plan-description" v-if="plan.content" v-html="plan.content"></div>
+          <!-- 套餐描述（经过 HTML 清洗，防止 XSS） -->
+          <div class="plan-description" v-if="plan.content" v-html="sanitizeHtml(plan.content)"></div>
         </div>
         <template #footer>
           <GeekButton @click.stop="purchasePlan(plan)" size="sm" class="w-full">
@@ -75,6 +76,7 @@
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { planService } from '@/api'
+import { sanitizeHtml } from '@/utils/sanitize'
 import type { Plan } from '@/types'
 import GeekCard from '@/components/common/GeekCard.vue'
 import GeekButton from '@/components/common/GeekButton.vue'
