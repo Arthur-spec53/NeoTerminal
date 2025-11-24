@@ -161,11 +161,10 @@ const fetchSiteConfig = async () => {
   try {
     const response = await configService.fetchGuest()
     if (response && response.data) {
-      const { app_name, app_description } = response.data
-      // 从配置中获取站点名称：优先名称，其次描述，最后通用默认值
+      const { app_name } = response.data
+      // 从配置中获取站点名称：仅使用 app_name，未配置时使用通用默认值
       siteName.value =
         (typeof app_name === 'string' && app_name.trim() !== '' ? app_name.trim() : undefined) ||
-        (typeof app_description === 'string' && app_description.trim() !== '' ? app_description.trim() : undefined) ||
         'XBoard'
       log('[Login] ✅ 站点名称已加载:', siteName.value)
     }

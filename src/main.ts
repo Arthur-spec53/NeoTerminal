@@ -49,14 +49,11 @@ const initSiteConfig = async () => {
       log('[App] app_name类型:', typeof app_name, '值:', app_name)
       log('[App] app_description类型:', typeof app_description, '值:', app_description)
       
-      // 更新页面标题 - 优先使用后端配置的站点名称，其次描述，最后使用通用默认值
+      // 更新页面标题 - 优先使用后端配置的站点名称，未配置时使用通用默认值
       let title = 'XBoard'
       if (app_name && typeof app_name === 'string' && app_name.trim() !== '') {
         title = app_name.trim()
         log('[App] ✅ 使用 app_name 作为标题')
-      } else if (app_description && typeof app_description === 'string' && app_description.trim() !== '') {
-        title = app_description.trim()
-        log('[App] ✅ 使用 app_description 作为标题')
       } else {
         log('[App] ✅ 使用默认标题:', title)
       }

@@ -158,10 +158,9 @@ const fetchConfig = async () => {
   try {
     const response = await configService.fetchGuest()
     if (response.success && response.data) {
-      const { app_name, app_description } = response.data
+      const { app_name } = response.data
       siteName.value =
         (typeof app_name === 'string' && app_name.trim() !== '' ? app_name.trim() : undefined) ||
-        (typeof app_description === 'string' && app_description.trim() !== '' ? app_description.trim() : undefined) ||
         'XBoard'
     }
   } catch (error) {

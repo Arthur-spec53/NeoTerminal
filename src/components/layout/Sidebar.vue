@@ -94,15 +94,12 @@ const fetchSiteConfig = async () => {
   try {
     const response = await configService.fetchGuest()
     if (response && response.data) {
-      const { app_name, app_description } = response.data
+      const { app_name } = response.data
 
-      // 站点名优先使用 app_name，其次描述，最后使用通用默认值
+      // 站点名仅使用 app_name，未配置时使用通用默认值
       if (app_name && typeof app_name === 'string' && app_name.trim() !== '') {
         siteName.value = app_name.trim()
         log('[Sidebar] ✅ 使用 app_name 作为站点名称:', siteName.value)
-      } else if (app_description && typeof app_description === 'string' && app_description.trim() !== '') {
-        siteName.value = app_description.trim()
-        log('[Sidebar] ✅ 使用 app_description 作为站点名称:', siteName.value)
       } else {
         siteName.value = 'XBoard'
         log('[Sidebar] ✅ 使用默认站点名称:', siteName.value)

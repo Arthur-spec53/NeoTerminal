@@ -20,7 +20,8 @@ export const useAppStore = defineStore('app', () => {
     notifications.value.filter(n => !n.read).length
   )
 
-  const appName = computed(() => config.value?.app_description || 'XBoard Geek')
+  // 站点显示名仅使用后端配置的 app_name，未配置时使用通用默认值
+  const appName = computed(() => config.value?.app_name || 'XBoard')
   const appUrl = computed(() => config.value?.app_url || '')
   const logo = computed(() => config.value?.logo || null)
   const currency = computed(() => config.value?.currency || 'CNY')
